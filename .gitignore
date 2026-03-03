@@ -1,0 +1,30 @@
+node_modules
+dist
+.env
+
+# Database
+data/jobs.db
+data/jobs.db-wal
+data/jobs.db-shm
+
+# Browser session & logs
+data/browser-data/
+data/logs/
+data/snapshot*
+
+# Personal data (fill from profile.example.md)
+data/profile.md
+
+# Work artifacts (screenshots, snapshots, CV)
+*.png
+*.pdf
+job-*.md
+job*-snapshot.md
+search-*.md
+upwork-*.md
+data/tmp-*
+
+# System / IDE
+.DS_Store
+.idea/
+.playwright-mcp/
