@@ -357,13 +357,38 @@ function processQueue(): void {
           notify(`\u2705 ${summary}`).catch(console.error);
         }
       }
-    } else if (!isTimeout && retries < 1 && action !== 'submit') {
-      // Auto-retry once for non-timeout failures (skip submit — user must buy Connects first)
+    } else if (!isTimeout && action !== 'submit') {
       const reason = diagnoseFailure(code, signal, stderr, stdout, elapsed, TASK_TIMEOUT);
-      console.log(`[queue] Failed: ${label} — ${reason}. Auto-retrying (attempt ${retries + 2})...`);
-      logToFile(label, `AUTO-RETRY: attempt ${retries + 2}`);
-      notify(`\ud83d\udd04 ${label} failed, retrying automatically...\n${reason.slice(0, 200)}`).catch(console.error);
-      taskQueue.unshift({ ...item, retries: retries + 1 });
+      const isRateLimit = reason.includes('rate limit') || reason.includes('authentication error');
+      const maxRetries = isRateLimit ? 3 : 1;
+
+      if (retries < maxRetries) {
+        const delaySec = isRateLimit ? 60 * (retries + 1) : 0;
+        const delayMin = Math.round(delaySec / 60);
+        console.log(`[queue] Failed: ${label} — ${reason}. Retrying in ${delaySec}s (attempt ${retries + 2}/${maxRetries + 1})...`);
+        logToFile(label, `AUTO-RETRY: attempt ${retries + 2}, delay ${delaySec}s`);
+        if (isRateLimit) {
+          notify(`\u23f3 Rate limit reached. Retrying in ${delayMin} min (attempt ${retries + 2}/${maxRetries + 1})...`).catch(console.error);
+        } else {
+          notify(`\ud83d\udd04 ${label} failed, retrying...\n${reason.slice(0, 200)}`).catch(console.error);
+        }
+        const retryItem = { ...item, retries: retries + 1 };
+        if (delaySec > 0) {
+          setTimeout(() => {
+            taskQueue.unshift(retryItem);
+            processQueue();
+          }, delaySec * 1000);
+          return;
+        } else {
+          taskQueue.unshift(retryItem);
+        }
+      } else if (isRateLimit) {
+        console.error(`[queue] Rate limit: ${label} — retries exhausted (${retries + 1} attempts over ${elapsed}s)`);
+        notify(`\u26a0\ufe0f Rate limit — all ${retries + 1} retries failed. Will try again on next scheduled search.`).catch(console.error);
+      } else {
+        console.error(`[queue] Failed: ${label} — ${reason} (${elapsed}s, ${retries + 1} retries exhausted)`);
+        sendError(label, reason, jobId, action).catch(console.error);
+      }
     } else {
       const reason = diagnoseFailure(code, signal, stderr, stdout, elapsed, TASK_TIMEOUT);
       console.error(`[queue] Failed: ${label} — ${reason} (${elapsed}s)`);
