@@ -1,0 +1,29 @@
+services:
+  upwork-agent:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    container_name: upwork-agent
+    restart: unless-stopped
+    shm_size: '2gb'
+    volumes:
+      - upwork-data:/app/data
+      - claude-auth:/root/.claude
+    ports:
+      - "127.0.0.1:6080:6080"
+    environment:
+      - DISPLAY=:99
+      - BOT_TOKEN=${BOT_TOKEN}
+      - CHAT_ID=${CHAT_ID}
+      - ALLOWED_USERS=${ALLOWED_USERS}
+      - TIMEZONE=${TIMEZONE:-Asia/Bangkok}
+      - SEARCH_INTERVAL_MIN=${SEARCH_INTERVAL_MIN:-20}
+      - CHROME_PATH=/usr/bin/google-chrome-stable
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}
+      - CLAUDE_ACCOUNT_UUID=${CLAUDE_ACCOUNT_UUID}
+      - CLAUDE_EMAIL=${CLAUDE_EMAIL}
+      - CLAUDE_ORG_UUID=${CLAUDE_ORG_UUID}
+
+volumes:
+  upwork-data:
+  claude-auth:

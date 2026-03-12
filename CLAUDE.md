@@ -57,6 +57,8 @@ The agent reads this file to score jobs and write proposals.
 
 ### Step 5: Run
 
+**Option A: Bare metal** (Mac/Linux with GUI)
+
 ```bash
 yarn daemon
 ```
@@ -67,6 +69,28 @@ This starts:
 - Cron job (searches Upwork every N minutes during 8:00-23:00)
 
 The daemon sends a "Agent started" message to your Telegram chat.
+
+**Option B: Docker** (server, 24/7 headless)
+
+```bash
+cd infra
+cp .env.example .env   # fill in Telegram + Claude OAuth credentials
+docker compose up -d
+```
+
+This starts everything inside a container with a virtual display + VNC.
+Open `http://server:6080` in a browser to see Chrome via noVNC (for Upwork login).
+
+Additional env variables for Docker (see `infra/.env.example`):
+
+| Variable | How to get |
+|----------|-----------|
+| `CLAUDE_CODE_OAUTH_TOKEN` | On a machine with Claude Code logged in: `security find-generic-password -s "claude-cli" -w` (macOS) |
+| `CLAUDE_ACCOUNT_UUID` | `cat ~/.claude.json \| grep -A5 oauthAccount` |
+| `CLAUDE_EMAIL` | Same as above |
+| `CLAUDE_ORG_UUID` | Same as above |
+
+See `infra/README.md` for full Docker documentation.
 
 ### Architecture
 
@@ -132,6 +156,13 @@ data/
   jobs.db      — SQLite database (auto-created)
   browser-data/— Chrome profile with Upwork session (auto-created)
   logs/        — task execution logs (auto-created)
+infra/
+  Dockerfile        — container image (Ubuntu + Chrome + Node + VNC)
+  docker-compose.yml— single-command deploy
+  supervisord.conf  — process manager config
+  start.sh          — entrypoint (auth setup, cleanup, notifications)
+  .env.example      — env template for Docker
+  README.md         — Docker deployment docs
 ```
 
 ## Rules

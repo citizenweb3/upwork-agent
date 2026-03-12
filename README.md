@@ -39,66 +39,35 @@ Cron (every N min) or /search command
   Claude submits on Upwork
 ```
 
-## Requirements
-
-- macOS or Ubuntu Desktop (GUI required for Chrome)
-- Node.js >= 20
-- Google Chrome (real browser, not Chromium — Upwork's Cloudflare Turnstile detects `navigator.webdriver` in Playwright's bundled Chromium)
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) with active subscription
-- Telegram account
-
 ## Setup
 
-### Install system dependencies
+There are two ways to run the agent:
 
-**macOS:**
+| | **Docker (recommended)** | **Bare metal** |
+|---|---|---|
+| Best for | Server, 24/7, headless | Mac/Linux desktop with monitor |
+| Requirements | Docker, Docker Compose | Node.js, Chrome, Claude Code CLI |
+| Chrome access | Via noVNC in browser (`http://server:6080`) | Native Chrome window |
+| Setup time | ~5 min | ~15 min |
 
-```bash
-# Node.js (if not installed)
-brew install node
+---
 
-# Yarn
-npm install -g yarn
+### Option A: Docker (recommended for servers)
 
-# Claude Code CLI
-npm install -g @anthropic-ai/claude-code
+#### Requirements
 
-# Google Chrome — install from https://www.google.com/chrome/
-```
+- Docker and Docker Compose
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) subscription (for OAuth token)
+- Telegram account
 
-**Ubuntu Desktop:**
-
-```bash
-# Node.js 20+ via NodeSource
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
-
-# Yarn
-npm install -g yarn
-
-# Claude Code CLI
-npm install -g @anthropic-ai/claude-code
-
-# Google Chrome
-wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-sudo dpkg -i /tmp/chrome.deb
-sudo apt --fix-broken install -y
-
-# Required by Chrome/Playwright on Linux
-sudo apt install -y lsof
-```
-
-### 1. Clone and install
+#### 1. Clone
 
 ```bash
 git clone <repo-url>
 cd upwork-agent
-yarn install
 ```
 
-Playwright is a dependency but only used as a CDP client (`chromium.connectOverCDP`). No browser download needed — the agent connects to your real Google Chrome.
-
-### 2. Create Telegram bot
+#### 2. Create Telegram bot
 
 1. Open [@BotFather](https://t.me/BotFather) in Telegram
 2. Send `/newbot`, follow the prompts, copy the **bot token**
@@ -109,7 +78,113 @@ Playwright is a dependency but only used as a CDP client (`chromium.connectOverC
 5. Get your **user ID**: send any message to [@userinfobot](https://t.me/userinfobot)
 6. If using a group: BotFather > `/mybots` > your bot > Bot Settings > Group Privacy > **Turn off**
 
-### 3. Configure environment
+#### 3. Configure environment
+
+```bash
+cd infra
+cp .env.example .env
+```
+
+Edit `infra/.env`:
+
+| Variable | Description | How to get |
+|----------|-------------|-----------|
+| `BOT_TOKEN` | Telegram bot token | From [@BotFather](https://t.me/BotFather) |
+| `CHAT_ID` | Telegram chat ID | See step 2 above |
+| `ALLOWED_USERS` | User IDs who can press buttons | From [@userinfobot](https://t.me/userinfobot), comma-separated |
+| `TIMEZONE` | Your timezone | e.g. `Europe/Moscow` (default: `Asia/Bangkok`) |
+| `SEARCH_INTERVAL_MIN` | Auto-search interval in minutes | Default: `20` |
+| `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code OAuth token | See below |
+| `CLAUDE_ACCOUNT_UUID` | Account UUID | See below |
+| `CLAUDE_EMAIL` | Account email | See below |
+| `CLAUDE_ORG_UUID` | Organization UUID | See below |
+
+**Getting Claude Code OAuth credentials** — on a machine where Claude Code is already logged in:
+
+```bash
+# OAuth token (macOS)
+security find-generic-password -s "claude-cli" -w
+
+# Account UUID, email, org UUID
+cat ~/.claude.json | grep -A5 oauthAccount
+```
+
+#### 4. Set up your profile
+
+```bash
+cp data/profile.example.md data/profile.md
+```
+
+Edit `data/profile.md` with your name, tech stack, experience, scoring criteria, and proposal style. The agent reads this file to score jobs and write proposals.
+
+#### 5. Launch
+
+```bash
+cd infra
+docker compose up -d
+```
+
+First build takes ~5 minutes. After that:
+
+1. Open `http://server:6080` in a browser — you'll see Chrome via noVNC
+2. Log in to Upwork manually in that Chrome
+3. The session persists in a Docker volume across restarts
+
+The bot sends a Telegram notification when the browser is ready.
+
+#### Docker management
+
+```bash
+docker compose logs -f          # follow logs
+docker compose restart          # restart
+docker compose down             # stop
+docker compose up -d --build    # rebuild after code changes
+```
+
+---
+
+### Option B: Bare metal (Mac/Linux desktop)
+
+#### Requirements
+
+- Node.js >= 20
+- Google Chrome (real browser, not Chromium — Upwork detects `navigator.webdriver` in Playwright's bundled Chromium)
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) with active subscription
+- Telegram account
+
+#### Install system dependencies
+
+**macOS:**
+
+```bash
+brew install node
+npm install -g yarn @anthropic-ai/claude-code
+# Google Chrome — install from https://www.google.com/chrome/
+```
+
+**Ubuntu Desktop:**
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs lsof
+npm install -g yarn @anthropic-ai/claude-code
+wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+sudo dpkg -i /tmp/chrome.deb && sudo apt --fix-broken install -y
+```
+
+#### 1. Clone and install
+
+```bash
+git clone <repo-url>
+cd upwork-agent
+yarn install
+```
+
+#### 2. Create Telegram bot
+
+Same as Docker Option A, step 2.
+
+#### 3. Configure environment
 
 ```bash
 cp .env.example .env
@@ -121,31 +196,20 @@ Edit `.env`:
 |----------|-------------|---------|
 | `BOT_TOKEN` | Telegram bot token from BotFather | required |
 | `CHAT_ID` | Telegram chat ID (negative for groups) | required |
-| `ALLOWED_USERS` | Comma-separated Telegram user IDs who can use buttons | required |
+| `ALLOWED_USERS` | Comma-separated Telegram user IDs | required |
 | `TIMEZONE` | Your timezone | `Asia/Bangkok` |
 | `SEARCH_INTERVAL_MIN` | Auto-search interval in minutes (8:00-23:00) | `30` |
 | `CHROME_PATH` | Path to Chrome binary | Auto-detected by OS |
 
-Chrome path is auto-detected: `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` on macOS, `/usr/bin/google-chrome` on Linux. Override in `.env` only if Chrome is installed elsewhere.
-
-### 4. Set up your profile
+#### 4. Set up your profile
 
 ```bash
 cp data/profile.example.md data/profile.md
 ```
 
-Edit `data/profile.md` with your:
+Edit with your name, tech stack, experience, scoring criteria, and proposal style.
 
-- Name, links, tech stack
-- Work experience and key projects with metrics
-- Scoring criteria (what jobs to prioritize)
-- Ideal project parameters (budget, duration, type)
-- Proposal writing style and tone
-- Differentiators
-
-The agent reads this file to score jobs and write proposals that match your voice.
-
-### 5. First launch — log in to Upwork
+#### 5. First launch — log in to Upwork
 
 ```bash
 yarn daemon
@@ -153,7 +217,7 @@ yarn daemon
 
 A Chrome window opens with a separate profile (`data/browser-data/`). **Log in to Upwork manually.** The session persists across daemon restarts.
 
-### 6. Daily use
+#### 6. Daily use
 
 ```bash
 yarn daemon
@@ -280,9 +344,17 @@ data/
   browser-data/       Chrome profile with Upwork session (auto-created)
   logs/               Task execution logs
 
+infra/
+  Dockerfile          Container image (Ubuntu + Chrome + Node + VNC)
+  docker-compose.yml  Single-command deploy
+  supervisord.conf    Process manager (Xvfb, x11vnc, noVNC, daemon)
+  start.sh            Entrypoint (auth, cleanup, notifications)
+  .env.example        Env template for Docker
+  README.md           Docker-specific docs
+
 .mcp.json         Playwright MCP server config (CDP endpoint)
 .env              Bot token, chat ID, settings (gitignored)
-.env.example      Template for .env
+.env.example      Template for .env (bare metal)
 CLAUDE.md         Agent instructions for Claude Code
 ```
 
@@ -315,6 +387,15 @@ CLAUDE.md         Agent instructions for Claude Code
 **Chrome won't start**
 - Check `CHROME_PATH` in `.env` (or leave it empty for auto-detection)
 - Kill zombie processes: `lsof -ti:9222 | xargs kill -9`
+- In Docker: stale lock files are cleaned automatically on start. If still failing: `docker compose restart`
+
+**Docker: Claude Code auth error**
+- Check that `CLAUDE_CODE_OAUTH_TOKEN` is filled in `infra/.env`
+- OAuth tokens expire — get a fresh one and `docker compose restart`
+
+**Docker: noVNC not accessible**
+- Port 6080 is bound to `127.0.0.1` by default
+- For remote access change `"127.0.0.1:6080:6080"` to `"6080:6080"` in `docker-compose.yml`
 
 **Search finds 0 jobs**
 - The agent rotates through search queries randomly

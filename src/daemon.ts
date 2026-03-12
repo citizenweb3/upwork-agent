@@ -3,7 +3,7 @@ import { Bot, InlineKeyboard } from 'grammy';
 import { chromium, type Browser, type BrowserContext } from 'playwright';
 import cron from 'node-cron';
 import { spawn, execSync } from 'node:child_process';
-import { mkdirSync, readFileSync, appendFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, appendFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { db } from './db/index.js';
 
@@ -19,13 +19,14 @@ function defaultChromePath(): string {
     case 'darwin':
       return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
     case 'linux':
-      return '/usr/bin/google-chrome';
+      return '/usr/bin/google-chrome-stable';
     default:
       return 'google-chrome';
   }
 }
 
 const CHROME_PATH = process.env.CHROME_PATH ?? defaultChromePath();
+const IS_DOCKER = existsSync('/.dockerenv');
 const JOBS_PER_SEARCH = Number(process.env.JOBS_PER_SEARCH ?? '10');
 
 if (!BOT_TOKEN) {
@@ -159,10 +160,12 @@ async function launchBrowser(): Promise<void> {
   console.log(`Launching Chrome: ${CHROME_PATH}`);
   console.log(`  --remote-debugging-port=${cdpPort} --user-data-dir=${userDataDir}`);
 
-  chromeProcess = spawn(CHROME_PATH, [
+  const chromeArgs = [
     `--remote-debugging-port=${cdpPort}`,
     `--user-data-dir=${userDataDir}`,
-  ], { detached: true, stdio: 'ignore' });
+    ...(IS_DOCKER ? ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] : []),
+  ];
+  chromeProcess = spawn(CHROME_PATH, chromeArgs, { detached: true, stdio: 'ignore' });
 
   console.log(`Chrome spawned (pid ${chromeProcess.pid})`);
 
@@ -359,7 +362,8 @@ function processQueue(): void {
       }
     } else if (!isTimeout && action !== 'submit') {
       const reason = diagnoseFailure(code, signal, stderr, stdout, elapsed, TASK_TIMEOUT);
-      const isRateLimit = reason.includes('rate limit') || reason.includes('authentication error');
+      const isAuthError = reason.includes('authentication error');
+      const isRateLimit = reason.includes('rate limit') || isAuthError;
       const maxRetries = isRateLimit ? 3 : 1;
 
       if (retries < maxRetries) {
@@ -367,7 +371,9 @@ function processQueue(): void {
         const delayMin = Math.round(delaySec / 60);
         console.log(`[queue] Failed: ${label} — ${reason}. Retrying in ${delaySec}s (attempt ${retries + 2}/${maxRetries + 1})...`);
         logToFile(label, `AUTO-RETRY: attempt ${retries + 2}, delay ${delaySec}s`);
-        if (isRateLimit) {
+        if (isAuthError) {
+          notify(`\u26d4 Claude Code auth failed — check CLAUDE_CODE_OAUTH_TOKEN in .env. Retrying in ${delayMin} min (attempt ${retries + 2}/${maxRetries + 1})...`).catch(console.error);
+        } else if (isRateLimit) {
           notify(`\u23f3 Rate limit reached. Retrying in ${delayMin} min (attempt ${retries + 2}/${maxRetries + 1})...`).catch(console.error);
         } else {
           notify(`\ud83d\udd04 ${label} failed, retrying...\n${reason.slice(0, 200)}`).catch(console.error);
