@@ -13,7 +13,7 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 const ALLOWED_USERS = process.env.ALLOWED_USERS;
 const SEARCH_INTERVAL_MIN = process.env.SEARCH_INTERVAL_MIN ?? '20';
-const TIMEZONE = process.env.TIMEZONE ?? 'Asia/Bangkok';
+const TIMEZONE = process.env.TIMEZONE ?? 'Europe/Lisbon';
 function defaultChromePath(): string {
   switch (process.platform) {
     case 'darwin':

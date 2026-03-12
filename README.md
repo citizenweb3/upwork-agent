@@ -83,8 +83,7 @@ cd upwork-agent
 #### 3. Configure environment
 
 ```bash
-cd infra
-cp .env.example .env
+cp .env.example infra/.env
 ```
 
 Edit `infra/.env`:
@@ -94,7 +93,7 @@ Edit `infra/.env`:
 | `BOT_TOKEN` | Telegram bot token | From [@BotFather](https://t.me/BotFather) |
 | `CHAT_ID` | Telegram chat ID | See step 2 above |
 | `ALLOWED_USERS` | User IDs who can press buttons | From [@userinfobot](https://t.me/userinfobot), comma-separated |
-| `TIMEZONE` | Your timezone | e.g. `Europe/Moscow` (default: `Asia/Bangkok`) |
+| `TIMEZONE` | Your timezone | `Europe/Lisbon` (default) |
 | `SEARCH_INTERVAL_MIN` | Auto-search interval in minutes | Default: `20` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code OAuth token | See below |
 | `CLAUDE_ACCOUNT_UUID` | Account UUID | See below |
@@ -199,7 +198,7 @@ Edit `.env`:
 | `BOT_TOKEN` | Telegram bot token from BotFather | required |
 | `CHAT_ID` | Telegram chat ID (negative for groups) | required |
 | `ALLOWED_USERS` | Comma-separated Telegram user IDs | required |
-| `TIMEZONE` | Your timezone | `Asia/Bangkok` |
+| `TIMEZONE` | Your timezone | `Europe/Lisbon` |
 | `SEARCH_INTERVAL_MIN` | Auto-search interval in minutes (8:00-23:00) | `30` |
 | `CHROME_PATH` | Path to Chrome binary | Auto-detected by OS |
 
@@ -351,12 +350,10 @@ infra/
   docker-compose.yml  Single-command deploy
   supervisord.conf    Process manager (Xvfb, x11vnc, noVNC, daemon)
   start.sh            Entrypoint (auth, cleanup, notifications)
-  .env.example        Env template for Docker
-  README.md           Docker-specific docs
 
 .mcp.json         Playwright MCP server config (CDP endpoint)
 .env              Bot token, chat ID, settings (gitignored)
-.env.example      Template for .env (bare metal)
+.env.example      Template for .env (both bare metal and Docker)
 CLAUDE.md         Agent instructions for Claude Code
 ```
 

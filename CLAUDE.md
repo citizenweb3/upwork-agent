@@ -31,7 +31,7 @@ Fill in `.env`:
 | `BOT_TOKEN` | Create a bot via [@BotFather](https://t.me/BotFather) in Telegram |
 | `CHAT_ID` | Add [@RawDataBot](https://t.me/RawDataBot) to your group, it will print the chat ID (negative number). Then remove the bot. For personal chat — send any message to [@userinfobot](https://t.me/userinfobot) |
 | `ALLOWED_USERS` | Comma-separated Telegram user IDs who can press buttons. Get your ID from [@userinfobot](https://t.me/userinfobot) |
-| `TIMEZONE` | Your timezone, e.g. `Asia/Bangkok` (default) |
+| `TIMEZONE` | Your timezone, e.g. `Europe/Lisbon` (default) |
 | `SEARCH_INTERVAL_MIN` | Cron interval in minutes for auto-search, e.g. `30` (default) |
 | `CHROME_PATH` | Path to Google Chrome binary. Default: `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` |
 
@@ -83,7 +83,7 @@ docker compose up -d
 This starts everything inside a container with a virtual display + VNC.
 Open `http://server:6080` in a browser to see Chrome via noVNC (for Upwork login).
 
-Additional env variables for Docker (see `infra/.env.example`):
+Additional env variables for Docker (see `.env.example`):
 
 | Variable | How to get |
 |----------|-----------|
@@ -92,7 +92,7 @@ Additional env variables for Docker (see `infra/.env.example`):
 | `CLAUDE_EMAIL` | Same as above |
 | `CLAUDE_ORG_UUID` | Same as above |
 
-See `infra/README.md` for full Docker documentation.
+See `README.md` for full Docker documentation.
 
 ### Architecture
 
@@ -163,8 +163,6 @@ infra/
   docker-compose.yml— single-command deploy
   supervisord.conf  — process manager config
   start.sh          — entrypoint (auth setup, cleanup, notifications)
-  .env.example      — env template for Docker
-  README.md         — Docker deployment docs
 ```
 
 ## Rules

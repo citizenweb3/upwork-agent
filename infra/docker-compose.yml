@@ -6,6 +6,7 @@ services:
     container_name: upwork-agent
     restart: unless-stopped
     shm_size: '2gb'
+    env_file: .env
     volumes:
       - upwork-data:/app/data
       - claude-auth:/root/.claude
@@ -16,7 +17,7 @@ services:
       - BOT_TOKEN=${BOT_TOKEN}
       - CHAT_ID=${CHAT_ID}
       - ALLOWED_USERS=${ALLOWED_USERS}
-      - TIMEZONE=${TIMEZONE:-Asia/Bangkok}
+      - TIMEZONE=${TIMEZONE:-Europe/Lisbon}
       - SEARCH_INTERVAL_MIN=${SEARCH_INTERVAL_MIN:-20}
       - CHROME_PATH=/usr/bin/google-chrome-stable
       - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}
