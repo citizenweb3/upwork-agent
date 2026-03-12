@@ -135,7 +135,10 @@ The bot sends a Telegram notification when the browser is ready.
 
 #### Docker management
 
+All commands from `infra/` directory:
+
 ```bash
+cd infra
 docker compose logs -f          # follow logs
 docker compose restart          # restart
 docker compose down             # stop
@@ -199,7 +202,7 @@ Edit `.env`:
 | `CHAT_ID` | Telegram chat ID (negative for groups) | required |
 | `ALLOWED_USERS` | Comma-separated Telegram user IDs | required |
 | `TIMEZONE` | Your timezone | `Europe/Lisbon` |
-| `SEARCH_INTERVAL_MIN` | Auto-search interval in minutes (8:00-23:00) | `30` |
+| `SEARCH_INTERVAL_MIN` | Auto-search interval in minutes (8:00-23:00) | `20` |
 | `CHROME_PATH` | Path to Chrome binary | Auto-detected by OS |
 
 #### 4. Set up your profile
