@@ -35,7 +35,9 @@ Fill in `.env`:
 | `SEARCH_INTERVAL_MIN` | Cron interval in minutes for auto-search, e.g. `30` (default) |
 | `CHROME_PATH` | Path to Google Chrome binary. Default: `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` |
 
-If using a **group chat**: go to BotFather > `/mybots` > your bot > Bot Settings > Group Privacy > **Turn off** (so the bot receives messages in the group).
+If using a **group chat**:
+- BotFather > `/mybots` > your bot > Bot Settings > Group Privacy > **Turn off** (so the bot receives messages in the group)
+- In the group: Settings > **Visible History** > turn on (so link previews in job cards work)
 
 ### Step 3: Login to Upwork
 

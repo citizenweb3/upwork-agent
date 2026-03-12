@@ -76,7 +76,9 @@ cd upwork-agent
    - For groups: add [@RawDataBot](https://t.me/RawDataBot), it prints the chat ID (negative number), then remove it
    - For personal chat: send any message to [@userinfobot](https://t.me/userinfobot)
 5. Get your **user ID**: send any message to [@userinfobot](https://t.me/userinfobot)
-6. If using a group: BotFather > `/mybots` > your bot > Bot Settings > Group Privacy > **Turn off**
+6. If using a group:
+   - BotFather > `/mybots` > your bot > Bot Settings > Group Privacy > **Turn off**
+   - In the group: Settings > **Visible History** > turn on (so link previews in job cards work)
 
 #### 3. Configure environment
 

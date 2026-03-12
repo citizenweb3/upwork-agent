@@ -61,7 +61,9 @@ cp .env.example .env
 | `CLAUDE_EMAIL` | Email аккаунта Claude |
 | `CLAUDE_ORG_UUID` | UUID организации Claude |
 
-Если используете **групповой чат**: BotFather → `/mybots` → ваш бот → Bot Settings → Group Privacy → **Turn off**.
+Если используете **групповой чат**:
+- BotFather → `/mybots` → ваш бот → Bot Settings → Group Privacy → **Turn off**
+- В группе: Настройки → **Видимая история** → включить (чтобы ссылки в карточках вакансий работали)
 
 ### 3. Получить Claude Code OAuth креды
 
