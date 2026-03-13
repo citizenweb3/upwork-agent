@@ -60,6 +60,49 @@ function readProfile(): string {
   }
 }
 
+// --- URL Guard (block sensitive Upwork pages) ---
+
+const BLOCKED_URL_PATTERNS = [
+  '/freelancers/settings',
+  '/ab/account-security',
+  '/ab/payments',
+  '/ab/membership',
+  '/nx/settings',
+  '/ab/create-contract',
+  '/ab/billing',
+];
+
+const SAFE_REDIRECT = 'https://www.upwork.com/nx/search/jobs/';
+
+function isBlockedUrl(url: string): boolean {
+  return BLOCKED_URL_PATTERNS.some(pattern => url.includes(pattern));
+}
+
+function installUrlGuard(context: BrowserContext): void {
+  const guard = (page: import('playwright').Page) => {
+    page.on('framenavigated', async (frame) => {
+      if (frame !== page.mainFrame()) return;
+      const url = frame.url();
+      if (isBlockedUrl(url)) {
+        console.warn(`[guard] Blocked navigation to sensitive page: ${url}`);
+        logToFile('url-guard', `BLOCKED: ${url}`);
+        try {
+          await page.goto(SAFE_REDIRECT);
+        } catch { /* page may be closed */ }
+      }
+    });
+  };
+
+  // Guard existing pages
+  for (const page of context.pages()) {
+    guard(page);
+  }
+
+  // Guard new pages
+  context.on('page', guard);
+  console.log('[guard] URL guard installed — sensitive pages are blocked');
+}
+
 // --- Browser Server ---
 
 const BROWSER_DATA_DIR = 'data/browser-data';
@@ -130,6 +173,9 @@ async function connectToCDP(): Promise<void> {
     throw new Error('No browser contexts found after CDP connection');
   }
   console.log(`Browser connected (Chrome CDP, port ${cdpPort})`);
+
+  // Install URL guard to block sensitive pages
+  installUrlGuard(browserContext);
 
   browser.on('disconnected', async () => {
     if (shuttingDown) return;
