@@ -83,10 +83,10 @@ cd upwork-agent
 #### 3. Configure environment
 
 ```bash
-cp .env.example infra/.env
+cp .env.example .env
 ```
 
-Edit `infra/.env`:
+Edit `.env`:
 
 | Variable | Description | How to get |
 |----------|-------------|-----------|
@@ -116,7 +116,7 @@ cat ~/.claude.json | grep -A5 oauthAccount
 cp data/profile.example.md data/profile.md
 ```
 
-Edit `data/profile.md` with your name, tech stack, experience, scoring criteria, and proposal style. The agent reads this file to score jobs and write proposals.
+Edit `data/profile.md` with your name, tech stack, experience, scoring criteria, and proposal style. The Docker image seeds this file into the persistent `upwork-data` volume on first boot if it exists during build.
 
 #### 5. Launch
 
@@ -127,7 +127,7 @@ docker compose up -d
 
 First build takes ~5 minutes. After that:
 
-1. Open `http://server:6080` in a browser — you'll see Chrome via noVNC
+1. If the server is remote, create an SSH tunnel to `127.0.0.1:6080`, then open `http://localhost:6080` in a browser — you'll see Chrome via noVNC
 2. Log in to Upwork manually in that Chrome
 3. The session persists in a Docker volume across restarts
 
@@ -143,6 +143,11 @@ docker compose logs -f          # follow logs
 docker compose restart          # restart
 docker compose down             # stop
 docker compose up -d --build    # rebuild after code changes
+./check-docker-access.sh        # diagnose Docker daemon/context access
+./check-telegram.sh             # validate bot token, CHAT_ID, recent updates
+./open-upwork-login.sh          # open Upwork login page in container Chrome
+./check-browser-state.sh        # inspect current Chrome/Upwork page in container
+./check-deployment.sh           # smoke-check container, logs, data, CDP
 ```
 
 ---
@@ -392,12 +397,23 @@ CLAUDE.md         Agent instructions for Claude Code
 - In Docker: stale lock files are cleaned automatically on start. If still failing: `docker compose restart`
 
 **Docker: Claude Code auth error**
-- Check that `CLAUDE_CODE_OAUTH_TOKEN` is filled in `infra/.env`
+- Check that `CLAUDE_CODE_OAUTH_TOKEN` is filled in the project `.env`
 - OAuth tokens expire — get a fresh one and `docker compose restart`
 
 **Docker: noVNC not accessible**
 - Port 6080 is bound to `127.0.0.1` by default
 - For remote access change `"127.0.0.1:6080:6080"` to `"6080:6080"` in `docker-compose.yml`
+
+**Docker: permission denied to `/var/run/docker.sock`**
+- Run `infra/check-docker-access.sh`
+- If using Docker Desktop, start it and switch to `desktop-linux`
+- If using the system daemon, add your user to the `docker` group and re-open the shell
+
+**Telegram: `chat not found`**
+- Run `infra/check-telegram.sh`
+- Make sure the bot has been started in the target personal chat or added to the target group
+- If `getUpdates` is empty, send any message to the bot (or group) and run the script again
+- After the first incoming message from an allowed user, the daemon will automatically learn that chat and persist it for future restarts
 
 **Search finds 0 jobs**
 - The agent rotates through search queries randomly

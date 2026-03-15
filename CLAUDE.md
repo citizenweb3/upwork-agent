@@ -75,13 +75,14 @@ The daemon sends a "Agent started" message to your Telegram chat.
 **Option B: Docker** (server, 24/7 headless)
 
 ```bash
-cd infra
+cd upwork-agent
 cp .env.example .env   # fill in Telegram + Claude OAuth credentials
+cd infra
 docker compose up -d
 ```
 
 This starts everything inside a container with a virtual display + VNC.
-Open `http://server:6080` in a browser to see Chrome via noVNC (for Upwork login).
+If the server is remote, create an SSH tunnel to `127.0.0.1:6080` and open `http://localhost:6080` in a browser to see Chrome via noVNC (for Upwork login).
 
 Additional env variables for Docker (see `.env.example`):
 

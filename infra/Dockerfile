@@ -1,5 +1,7 @@
 FROM ubuntu:24.04
 
+ENV DEBIAN_FRONTEND=noninteractive
+
 # Base packages + virtual display + VNC
 RUN apt-get update && apt-get install -y \
     curl wget gnupg supervisor \
@@ -34,6 +36,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+RUN mkdir -p /opt/upwork-agent-seed \
+    && cp data/profile.example.md /opt/upwork-agent-seed/profile.example.md \
+    && if [ -f data/profile.md ]; then cp data/profile.md /opt/upwork-agent-seed/profile.md; fi
 
 # noVNC: redirect / → vnc.html
 RUN ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html
