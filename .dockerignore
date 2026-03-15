@@ -1,4 +1,6 @@
-data/
+data/*
+!data/profile.example.md
+!data/profile.md
 node_modules/
 .env
 *.png

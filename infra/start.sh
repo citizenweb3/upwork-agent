@@ -19,8 +19,19 @@ fi
 mkdir -p /run/dbus
 dbus-daemon --system --fork 2>/dev/null || true
 
-# Create log directory
-mkdir -p /app/data/logs
+# Create persistent data directories
+mkdir -p /app/data/logs /app/data/browser-data
+
+# Seed profile files into the persistent volume on first boot.
+if [ -f /opt/upwork-agent-seed/profile.example.md ] && [ ! -f /app/data/profile.example.md ]; then
+    cp /opt/upwork-agent-seed/profile.example.md /app/data/profile.example.md
+fi
+
+if [ -f /opt/upwork-agent-seed/profile.md ] && [ ! -f /app/data/profile.md ]; then
+    cp /opt/upwork-agent-seed/profile.md /app/data/profile.md
+elif [ -f /opt/upwork-agent-seed/profile.example.md ] && [ ! -f /app/data/profile.md ]; then
+    cp /opt/upwork-agent-seed/profile.example.md /app/data/profile.md
+fi
 
 # Remove stale Chrome lock (from previous container)
 rm -f /app/data/browser-data/SingletonLock /app/data/browser-data/SingletonCookie /app/data/browser-data/SingletonSocket
@@ -36,7 +47,7 @@ if [ -n "$BOT_TOKEN" ] && [ -n "$CHAT_ID" ]; then
 
     curl -s "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
         -d chat_id="${CHAT_ID}" \
-        -d "text=🖥 Browser ready — log in to Upwork at http://localhost:6080" \
+        -d "text=🖥 Browser ready — open noVNC at http://localhost:6080 (use an SSH tunnel if the server is remote) and log in to Upwork" \
         > /dev/null
 
     # Wait for supervisord (keeps container alive)

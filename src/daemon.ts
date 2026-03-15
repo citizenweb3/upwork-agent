@@ -3,7 +3,7 @@ import { Bot, InlineKeyboard } from 'grammy';
 import { chromium, type Browser, type BrowserContext } from 'playwright';
 import cron from 'node-cron';
 import { spawn, execSync } from 'node:child_process';
-import { mkdirSync, readFileSync, appendFileSync, existsSync } from 'node:fs';
+import { mkdirSync, readFileSync, appendFileSync, existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { db } from './db/index.js';
 
@@ -45,8 +45,44 @@ if (!ALLOWED_USERS) {
 }
 
 const CWD = process.cwd();
-const chatId = Number(CHAT_ID);
+const ACTIVE_CHAT_PATH = 'data/active-chat.json';
+const configuredChatId = Number(CHAT_ID);
+let activeChatId = configuredChatId;
 const allowedUsers = new Set(ALLOWED_USERS.split(',').map(id => Number(id.trim())));
+
+function getTargetChatId(): number {
+  return activeChatId;
+}
+
+function loadPersistedActiveChatId(): void {
+  if (!existsSync(ACTIVE_CHAT_PATH)) return;
+
+  try {
+    const parsed = JSON.parse(readFileSync(ACTIVE_CHAT_PATH, 'utf-8')) as { chatId?: unknown };
+    if (typeof parsed.chatId === 'number' && !Number.isNaN(parsed.chatId)) {
+      activeChatId = parsed.chatId;
+      console.log(`[bot] Loaded persisted active chat: ${activeChatId}`);
+      return;
+    }
+    console.error(`[bot] Ignoring invalid persisted chat file: ${ACTIVE_CHAT_PATH}`);
+  } catch (err) {
+    console.error(`[bot] Failed to load persisted chat: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+function persistActiveChatId(): void {
+  mkdirSync(path.dirname(ACTIVE_CHAT_PATH), { recursive: true });
+  writeFileSync(ACTIVE_CHAT_PATH, `${JSON.stringify({ chatId: activeChatId }, null, 2)}\n`);
+}
+
+function updateActiveChatId(chatId: number | undefined, source: string): void {
+  if (!chatId || Number.isNaN(chatId) || chatId === activeChatId) return;
+  activeChatId = chatId;
+  persistActiveChatId();
+  console.log(`[bot] Active chat updated from ${source}: ${activeChatId}`);
+}
+
+loadPersistedActiveChatId();
 
 // --- Profile (read fresh on each proposal) ---
 
@@ -64,7 +100,7 @@ function readProfile(): string {
 
 const BLOCKED_URL_PATTERNS = [
   '/freelancers/settings',
-  '/ab/account-security',
+  '/ab/account-security/security',
   '/ab/payments',
   '/ab/membership',
   '/nx/settings',
@@ -193,7 +229,7 @@ async function connectToCDP(): Promise<void> {
       console.error('[cdp] Chrome not responding, full restart...');
       chromeProcess = null;
       await launchBrowser();
-      await bot.api.sendMessage(chatId, '\u26a0\ufe0f Browser crashed and was restarted.');
+       await notify('\u26a0\ufe0f Browser crashed and was restarted.');
     }
   });
 }
@@ -209,6 +245,9 @@ async function launchBrowser(): Promise<void> {
   const chromeArgs = [
     `--remote-debugging-port=${cdpPort}`,
     `--user-data-dir=${userDataDir}`,
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-search-engine-choice-screen',
     ...(IS_DOCKER ? ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] : []),
   ];
   chromeProcess = spawn(CHROME_PATH, chromeArgs, { detached: true, stdio: 'ignore' });
@@ -517,7 +556,7 @@ async function sendError(
     keyboard.text('\ud83d\udd04 Retry', `retry-${jobId}-${action}`);
   }
 
-  await bot.api.sendMessage(chatId, text, {
+  await bot.api.sendMessage(getTargetChatId(), text, {
     reply_markup: keyboard,
   });
 }
@@ -812,7 +851,7 @@ function getJobTitle(jobId: string): string {
 
 async function notify(text: string): Promise<void> {
   try {
-    await bot.api.sendMessage(chatId, text);
+    await bot.api.sendMessage(getTargetChatId(), text);
   } catch (err) {
     console.error('[notify] Failed:', err instanceof Error ? err.message : err);
   }
@@ -834,6 +873,7 @@ bot.use((ctx, next) => {
     console.log(`[bot] Blocked: user ${ctx.from?.id} not in ALLOWED_USERS`);
     return;
   }
+  updateActiveChatId(ctx.chat?.id, 'incoming update');
   return next();
 });
 
@@ -975,7 +1015,7 @@ bot.command('report', async (ctx) => {
   }
 
   // t.me/c/ links only work for supergroups (chat_id format: -100XXXXXXXXXX)
-  const chatIdStr = String(chatId);
+  const chatIdStr = String(getTargetChatId());
   const groupId = chatIdStr.startsWith('-100') && chatIdStr.length >= 14 ? chatIdStr.slice(4) : null;
 
   const formatJob = (job: ReportJob, useProposalLink = false) => {
@@ -1205,7 +1245,7 @@ async function main(): Promise<void> {
   console.log('[startup] Phase 3/4: Starting cron scheduler...');
   startCron();
   console.log('[startup] Phase 4/4: Sending startup notification...');
-  await bot.api.sendMessage(chatId, '\ud83e\udd16 Agent started');
+  await notify('\ud83e\udd16 Agent started');
   console.log('[startup] Daemon ready. Env: interval=%smin, tz=%s, jobs_per_search=%d', SEARCH_INTERVAL_MIN, TIMEZONE, JOBS_PER_SEARCH);
 }
 
