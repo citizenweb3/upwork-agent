@@ -25,7 +25,7 @@ RUN ARCH=$(dpkg --print-architecture) \
         && apt-get update && apt-get install -y google-chrome-stable \
         && rm -rf /var/lib/apt/lists/*; \
     else \
-        npx --yes playwright install --with-deps chromium \
+        npx --yes playwright@1.50.0 install --with-deps chromium \
         && ln -sf $(find /root/.cache/ms-playwright -name chrome -type f | head -1) /usr/bin/google-chrome-stable; \
     fi
 

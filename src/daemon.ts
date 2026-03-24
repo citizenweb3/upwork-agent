@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import { Bot, InlineKeyboard } from 'grammy';
-import { chromium, type Browser, type BrowserContext } from 'playwright';
 import cron from 'node-cron';
 import { spawn, execSync } from 'node:child_process';
 import { mkdirSync, readFileSync, appendFileSync, existsSync } from 'node:fs';
@@ -60,56 +59,12 @@ function readProfile(): string {
   }
 }
 
-// --- URL Guard (block sensitive Upwork pages) ---
-
-const BLOCKED_URL_PATTERNS = [
-  '/freelancers/settings',
-  '/ab/account-security',
-  '/ab/payments',
-  '/ab/membership',
-  '/nx/settings',
-  '/ab/create-contract',
-  '/ab/billing',
-];
-
-const SAFE_REDIRECT = 'https://www.upwork.com/nx/search/jobs/';
-
-function isBlockedUrl(url: string): boolean {
-  return BLOCKED_URL_PATTERNS.some(pattern => url.includes(pattern));
-}
-
-function installUrlGuard(context: BrowserContext): void {
-  const guard = (page: import('playwright').Page) => {
-    page.on('framenavigated', async (frame) => {
-      if (frame !== page.mainFrame()) return;
-      const url = frame.url();
-      if (isBlockedUrl(url)) {
-        console.warn(`[guard] Blocked navigation to sensitive page: ${url}`);
-        logToFile('url-guard', `BLOCKED: ${url}`);
-        try {
-          await page.goto(SAFE_REDIRECT);
-        } catch { /* page may be closed */ }
-      }
-    });
-  };
-
-  // Guard existing pages
-  for (const page of context.pages()) {
-    guard(page);
-  }
-
-  // Guard new pages
-  context.on('page', guard);
-  console.log('[guard] URL guard installed — sensitive pages are blocked');
-}
-
 // --- Browser Server ---
 
 const BROWSER_DATA_DIR = 'data/browser-data';
-let browserContext: BrowserContext | null = null;
-let browser: Browser | null = null;
 let chromeProcess: ReturnType<typeof spawn> | null = null;
 let shuttingDown = false;
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
 const cdpPort = 9222;
 
 async function waitForCDP(port: number, timeoutMs: number): Promise<void> {
@@ -165,39 +120,6 @@ async function killExistingChrome(): Promise<void> {
   }
 }
 
-async function connectToCDP(): Promise<void> {
-  console.log('Connecting to Chrome via CDP...');
-  browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
-  browserContext = browser.contexts()[0] ?? null;
-  if (!browserContext) {
-    throw new Error('No browser contexts found after CDP connection');
-  }
-  console.log(`Browser connected (Chrome CDP, port ${cdpPort})`);
-
-  // Install URL guard to block sensitive pages
-  installUrlGuard(browserContext);
-
-  browser.on('disconnected', async () => {
-    if (shuttingDown) return;
-    console.error('CDP disconnected, attempting reconnect...');
-    browserContext = null;
-    browser = null;
-    // Don't null chromeProcess — Chrome might still be running
-    try {
-      await waitForCDP(cdpPort, 10000);
-      await connectToCDP();
-      console.log('[cdp] Reconnected to Chrome');
-    } catch (err) {
-      // Chrome actually died — restart from scratch
-      console.error('[cdp] Reconnect failed:', err instanceof Error ? err.message : err);
-      console.error('[cdp] Chrome not responding, full restart...');
-      chromeProcess = null;
-      await launchBrowser();
-      await bot.api.sendMessage(chatId, '\u26a0\ufe0f Browser crashed and was restarted.');
-    }
-  });
-}
-
 async function launchBrowser(): Promise<void> {
   await killExistingChrome();
   mkdirSync(BROWSER_DATA_DIR, { recursive: true });
@@ -221,7 +143,7 @@ async function launchBrowser(): Promise<void> {
 
   console.log('Waiting for CDP...');
   await waitForCDP(cdpPort, 15000);
-  await connectToCDP();
+  console.log('Chrome ready (CDP available)');
 }
 
 // --- Task Queue (Mutex) ---
@@ -242,7 +164,7 @@ let currentClaudeProc: ReturnType<typeof spawn> | null = null;
 
 function enqueueTask(item: QueueItem): void {
   // Deduplicate search: skip if already queued or currently running
-  const searchActions = ['search-warmup', 'search-extract'];
+  const searchActions = ['search'];
   if (item.action && searchActions.includes(item.action)) {
     if (taskQueue.some(t => t.action && searchActions.includes(t.action)) ||
         (isClaudeRunning && currentAction && searchActions.includes(currentAction))) {
@@ -272,6 +194,15 @@ function logToFile(label: string, content: string): void {
 }
 
 function processQueue(): void {
+  _processQueue().catch(err => {
+    console.error('[queue] processQueue error:', err instanceof Error ? err.message : err);
+    isClaudeRunning = false;
+    currentAction = undefined;
+    currentClaudeProc = null;
+  });
+}
+
+async function _processQueue(): Promise<void> {
   if (isClaudeRunning) {
     console.log(`[queue] Busy (running: ${currentAction}), ${taskQueue.length} tasks waiting`);
     return;
@@ -290,9 +221,9 @@ function processQueue(): void {
   const tools = item.allowedTools ?? 'mcp__upwork__*,Bash,Read,Write';
   const args = ['-p', task, '--allowedTools', tools, '--output-format', 'stream-json', '--verbose'];
 
-  // Haiku for search warmup (simple navigation) and submit (form filling)
-  // Sonnet (default) for extract (thorough parsing), propose and redo (creative writing)
-  if (action === 'search-warmup' || action === 'submit') {
+  // Haiku for submit (simple form filling)
+  // Sonnet (default) for search, propose and redo
+  if (action === 'submit') {
     args.push('--model', 'claude-haiku-4-5-20251001');
   }
 
@@ -308,7 +239,7 @@ function processQueue(): void {
     env: cleanEnv,
   });
   currentClaudeProc = proc;
-  console.log(`[queue] Claude spawned (pid: ${proc.pid}, action: ${action}, model: ${action === 'search-warmup' || action === 'search-extract' || action === 'submit' ? 'haiku' : 'sonnet'})`);
+  console.log(`[queue] Claude spawned (pid: ${proc.pid}, action: ${action}, model: ${action === 'submit' ? 'haiku' : 'sonnet'})`);
 
   let stdout = '';
   let stderr = '';
@@ -364,32 +295,6 @@ function processQueue(): void {
 
     logToFile(label, `EXIT: code=${code} signal=${signal} elapsed=${elapsed}s retries=${retries}\nRESULT: ${resultText.slice(0, 2000)}\nSTDERR (${stderr.length} chars): ${stderr.slice(0, 2000)}`);
 
-    // Chain: warmup → sort → extract (mutex stays locked during sort)
-    if (code === 0 && action === 'search-warmup') {
-      console.log(`[queue] Done: ${label} (${elapsed}s)`);
-      console.log('[queue] Warmup done, sorting by recency...');
-      sortByRecency().then(sorted => {
-        if (sorted) {
-          console.log('[queue] Sort done, enqueueing extraction...');
-        } else {
-          console.error('[queue] Sort failed, extracting with Best Match...');
-          notify('\u26a0\ufe0f Could not sort by recency, extracting Best Match results')
-            .catch(console.error);
-        }
-        taskQueue.unshift(buildSearchExtractTask());
-      }).catch(err => {
-        console.error('[queue] Sort error:', err);
-        taskQueue.unshift(buildSearchExtractTask());
-      }).finally(() => {
-        isClaudeRunning = false;
-        currentAction = undefined;
-        currentClaudeProc = null;
-        processQueue();
-      });
-      return;
-    }
-
-    // Release mutex for all non-warmup cases
     isClaudeRunning = false;
     currentAction = undefined;
     currentClaudeProc = null;
@@ -397,7 +302,7 @@ function processQueue(): void {
     if (code === 0) {
       console.log(`[queue] Done: ${label} (${elapsed}s)`);
 
-      if (action === 'search-extract') {
+      if (action === 'search') {
         const lower = resultText.toLowerCase();
         const isSessionIssue = lower.includes('session expired') || lower.includes('log in manually');
         const isCaptcha = lower.includes('captcha');
@@ -488,7 +393,7 @@ function diagnoseFailure(
     return `Claude API authentication error.\n${output.slice(0, 300)}`;
   }
 
-  if (output.includes('rate limit') || output.includes('429')) {
+  if (output.includes('rate limit') || output.includes('429') || output.includes('hit your limit')) {
     return `Claude API rate limited.\n${output.slice(0, 300)}`;
   }
 
@@ -522,47 +427,6 @@ async function sendError(
   });
 }
 
-// --- Sort by Recency (daemon-driven, no LLM) ---
-
-async function sortByRecency(): Promise<boolean> {
-  if (!browserContext) {
-    console.error('[sort] No browser context');
-    return false;
-  }
-
-  const page = browserContext.pages()[0];
-  if (!page) {
-    console.error('[sort] No active page');
-    return false;
-  }
-
-  try {
-    const currentUrl = page.url();
-    console.log(`[sort] Current URL: ${currentUrl}`);
-
-    const url = new URL(currentUrl);
-
-    // Verify we're on a search results page
-    if (!url.pathname.includes('/search/jobs') && !url.pathname.includes('/jobs/search')) {
-      console.error(`[sort] Not on search page: ${url.pathname}`);
-      return false;
-    }
-
-    url.searchParams.set('sort', 'recency');
-    const newUrl = url.toString();
-    console.log(`[sort] Navigating to: ${newUrl}`);
-
-    await page.goto(newUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(3000); // Let results re-render
-
-    console.log('[sort] Sorted by recency');
-    return true;
-  } catch (err) {
-    console.error('[sort] Failed:', err);
-    return false;
-  }
-}
-
 // --- Task Builders ---
 
 const PROPOSAL_VALIDATION_RULES = [
@@ -585,50 +449,55 @@ const SEARCH_QUERIES = [
   'python fastapi django backend API',
   'blockchain data indexer dashboard',
 ];
-function buildSearchWarmupTask(): QueueItem {
+function buildSearchTask(): QueueItem {
   const query = SEARCH_QUERIES[Math.floor(Math.random() * SEARCH_QUERIES.length)];
+  const delay1 = (2 + Math.random() * 3).toFixed(1);
+  const delay2 = (3 + Math.random() * 4).toFixed(1);
+  const delay3 = (2 + Math.random() * 3).toFixed(1);
+  const pageDelay = (2 + Math.random() * 5).toFixed(1);
+  const clickDelay = (1 + Math.random() * 3).toFixed(1);
   return {
     task: [
-      'Search for jobs on Upwork. Your ONLY job is to get to the search results page. Do NOT extract jobs.',
+      'Search for new jobs on Upwork, sort by Most Recent, and extract job details.',
       '',
       'CRITICAL RULES:',
       '- The ONLY URL you may use with browser_navigate is https://www.upwork.com',
-      '- NEVER type or construct search URLs.',
-      '- Between every browser action, wait 2-5 seconds.',
-      '- If CAPTCHA: try clicking checkbox, wait 5s, retry once. If still blocked: `yarn tg send "CAPTCHA detected"` and exit.',
-      '- If login page: `yarn tg send "Session expired, please log in manually"` and exit.',
+      '- NEVER type or construct search URLs directly.',
+      `- Between every browser action, wait ${delay3} seconds.`,
+      '- If you see "Verify you are human" or Cloudflare spinner: wait 10s, browser_snapshot again. If still blocked after 30s total: `yarn tg send "Cloudflare challenge stuck, please solve manually"` and exit.',
+      '- If you see login page or "Log In": `yarn tg send "Session expired, please log in manually"` and exit.',
+      '- NEVER navigate to these pages: /freelancers/settings, /ab/payments, /ab/membership, /nx/settings, /ab/create-contract, /ab/billing, /ab/account-security/security, /ab/account-security/password',
       '',
-      'Steps:',
+      '=== PHASE 1: Navigate and Search ===',
+      '',
       '1. Run `yarn morning` to get context.',
-      '2. Use browser_navigate to go to https://www.upwork.com. Wait 3 seconds.',
+      `2. browser_navigate to https://www.upwork.com. Wait ${delay1} seconds.`,
       '3. browser_snapshot to check page state.',
-      '4. Find the search input field. browser_click on it.',
+      `4. Find the search input field. browser_click on it. Wait ${delay3} seconds.`,
       `5. browser_type "${query}" with slowly=true.`,
-      '6. browser_press_key Enter. Wait 5 seconds.',
-      '7. browser_snapshot to verify search results loaded (not CAPTCHA, not login).',
-      '8. If results are visible, exit successfully.',
-    ].join('\n'),
-    label: `Search warmup [${query}]`,
-    action: 'search-warmup',
-  };
-}
-
-function buildSearchExtractTask(): QueueItem {
-  return {
-    task: [
-      'Extract jobs from the current Upwork search results page. The page is already loaded and sorted.',
-      'Do NOT navigate anywhere. Do NOT sort. Just extract.',
+      `6. browser_press_key Enter. Wait ${delay2} seconds.`,
+      '7. browser_snapshot to verify search results loaded.',
       '',
-      'CRITICAL RULES:',
-      '- You MUST open EVERY job page individually using browser_click. No shortcuts.',
-      '- Do NOT batch-process jobs with shell scripts. Process each job one at a time through the browser.',
-      '- Do NOT guess or invent data. Only save data you actually read from the job detail page.',
-      '- If a value is not visible on the page, OMIT that flag in yarn jobs add. NEVER pass "Unknown", "Not specified", "N/A" — just leave out the flag.',
-      '- Budget may say "Upgrade your membership to see the bid range" — this means budget is hidden, omit --budget flag.',
+      '=== PHASE 2: Sort by Most Recent ===',
       '',
-      'Step 1: Read data/profile.md for scoring criteria.',
+      '8. Find the sort dropdown — look for text "Sort by: Best Matches" (element with data-test="dropdown-toggle").',
+      '9. browser_click on it to open the dropdown.',
+      `10. Wait ${delay3} seconds. browser_snapshot to see dropdown options.`,
+      '11. browser_click on "Most Recent" option.',
+      `12. Wait ${delay2} seconds for results to reload.`,
+      '13. browser_snapshot to verify results are sorted.',
       '',
-      'Step 2: Extract job URLs from the current page — run browser_run_code:',
+      'SORT FALLBACK: If after 2 attempts you cannot find or click the sort dropdown,',
+      'take the current search URL from browser_snapshot, append &sort=recency to it,',
+      'and browser_navigate to that URL.',
+      'Example: https://www.upwork.com/nx/search/jobs/?nbs=1&q=frontend becomes',
+      'https://www.upwork.com/nx/search/jobs/?nbs=1&q=frontend&sort=recency',
+      '',
+      '=== PHASE 3: Extract Jobs ===',
+      '',
+      '14. Read data/profile.md for scoring criteria.',
+      '',
+      '15. Extract job URLs from the current page — run browser_run_code:',
       '  async (page) => {',
       '    await page.waitForSelector(\'a[href*="/jobs/"]\', { timeout: 15000 });',
       '    return await page.evaluate(() => {',
@@ -647,48 +516,29 @@ function buildSearchExtractTask(): QueueItem {
       '  }',
       '  If jobs array is empty, report: `yarn tg send "Search selectors may be broken, found 0 job links"` and exit.',
       '',
-      'Step 3: For each job from the extracted list:',
-      '  a. Look at the "Posted X ago" text on the search results listing. If it says "X days ago" or "X weeks ago" — skip this job (too old). Only process jobs posted today (minutes/hours ago).',
-      '  b. Run `yarn jobs check <url>` — if "exists", skip this job entirely (go to next).',
-      '  c. Open the job page: browser_click on the job link (NEVER browser_navigate).',
-      '  d. Wait 3 seconds for the page to load.',
-      '  e. Run browser_snapshot to read the full job detail page.',
-      '  f. From the snapshot, extract ALL available fields:',
-      '     - title (from the heading)',
-      '     - description (from the Summary section, ~500 chars)',
-      '     - budget (from rate/price info — if "Upgrade membership" is shown, omit this field)',
-      '     - job-type (Hourly or Fixed-price)',
-      '     - skills (from Skills and Expertise section)',
-      '     - client-rating (from star rating if shown)',
-      '     - client-hires (from "X jobs posted" in About the client)',
-      '     - client-location (from About the client section)',
-      '     - client-spent (from total spent if shown)',
-      '     - proposals-count (from Activity on this job → Proposals)',
-      '     - posted-at (from "Posted X ago" text)',
-      '  g. Score relevance 0-10 based on profile.md.',
-      '  h. Save (use SINGLE QUOTES for $ values):',
+      '16. For each job from the extracted list:',
+      '  a. Look at the "Posted X ago" text. If "X days ago" or "X weeks ago" — skip (too old).',
+      '  b. Run `yarn jobs check <url>` — if "exists", skip.',
+      `  c. browser_click on the job link. Wait ${pageDelay} seconds.`,
+      '  d. browser_snapshot to read the full job detail page.',
+      '  e. Extract ALL available fields: title, description (~500 chars), budget, job-type, skills, client-rating, client-hires, client-location, client-spent, proposals-count, posted-at.',
+      '  f. Score relevance 0-10 based on profile.md.',
+      '  g. Save (use SINGLE QUOTES for $ values):',
       '     yarn jobs add --title \'...\' --url \'...\' --description \'...\' --budget \'...\' --job-type \'...\' --skills \'...\' --client-rating N --client-hires N --client-location \'...\' --client-spent \'...\' --proposals-count \'...\' --posted-at \'...\' --relevance-score N --relevance-reason \'...\'',
-      '     ALWAYS include ALL flags for values visible on the page, regardless of score. Even for low-score jobs, include posted-at, proposals-count, client-location, client-hires, etc. Omit a flag ONLY if the value is truly not on the page.',
-      '  i. Check yarn jobs add output. If "duplicate": true, do NOT send to Telegram.',
-      '  j. If score >= 4 AND newly added: `yarn tg send-job <id>`',
-      '  k. Go back: browser_navigate_back. Wait 3 seconds.',
+      '  h. If "duplicate": true in output, do NOT send to Telegram.',
+      '  i. If score >= 4 AND newly added: `yarn tg send-job <id>`',
+      `  j. browser_navigate_back. Wait ${clickDelay} seconds.`,
       '',
-      `Step 4: Pagination — Max 1 page. Do NOT paginate.`,
-      '',
-      `Step 5: After ${JOBS_PER_SEARCH} jobs or no more pages, exit.`,
+      `17. Process up to ${JOBS_PER_SEARCH} jobs. Do NOT paginate.`,
       '',
       'TIME LIMITS:',
       '- Single page > 30 seconds to load: skip.',
       '- Total > 15 minutes: save what you have and exit.',
       '- Do not retry failed loads.',
     ].join('\n'),
-    label: 'Job extraction',
-    action: 'search-extract',
+    label: `Search [${query}]`,
+    action: 'search',
   };
-}
-
-function buildSearchTask(): QueueItem {
-  return buildSearchWarmupTask();
 }
 
 function buildProposeTask(jobId: string): QueueItem {
@@ -787,10 +637,7 @@ function buildRedoTask(jobId: string): QueueItem {
 function rebuildTask(jobId: string, action: string): QueueItem {
   switch (action) {
     case 'search':
-    case 'search-warmup':
-      return buildSearchWarmupTask();
-    case 'search-extract':
-      return buildSearchExtractTask();
+      return buildSearchTask();
     case 'propose': return buildProposeTask(jobId);
     case 'submit': return buildSubmitTask(jobId);
     case 'redo': return buildRedoTask(jobId);
@@ -856,7 +703,11 @@ bot.command('search', async (ctx) => {
 bot.command('status', async (ctx) => {
   const queueLen = taskQueue.length;
   const running = isClaudeRunning ? 'Yes' : 'No';
-  const browserOk = browserContext ? 'Running' : 'Down';
+  let browserOk = 'Down';
+  try {
+    const res = await fetch(`http://127.0.0.1:${cdpPort}/json/version`);
+    if (res.ok) browserOk = 'Running';
+  } catch {}
   await ctx.reply(`Browser: ${browserOk}\nClaude running: ${running}\nQueue: ${queueLen} tasks`);
 });
 
@@ -1028,7 +879,7 @@ bot.on('callback_query:data', async (ctx) => {
   // retry-{jobId}-{action}
   if (data.startsWith('retry-')) {
     const rest = data.slice('retry-'.length);
-    // Job IDs start with ~ and have no dashes; action may contain dashes (e.g. search-warmup)
+    // Job IDs start with ~ and have no dashes; action may contain dashes
     const match = rest.match(/^(~[a-zA-Z0-9]+)-(.+)$/);
     const jobId = match ? match[1] : '';
     const action = match ? match[2] : rest;
@@ -1099,44 +950,47 @@ bot.on('callback_query:data', async (ctx) => {
   }
 });
 
+// --- Search scheduler (randomized setTimeout) ---
+
+function scheduleSearch(): void {
+  const baseMin = Number(SEARCH_INTERVAL_MIN);
+  const jitterMin = Math.round(baseMin * 0.3); // ±30% jitter
+  const delayMs = (baseMin - jitterMin + Math.random() * jitterMin * 2) * 60 * 1000;
+  const delayMin = Math.round(delayMs / 60000);
+
+  // Only schedule during working hours (8-23)
+  const now = new Date();
+  const hour = Number(now.toLocaleString('en-US', { hour: 'numeric', hour12: false, timeZone: TIMEZONE }));
+  if (hour < 8 || hour >= 23) {
+    // Schedule check at next hour
+    const nextCheckMs = (60 - now.getMinutes()) * 60 * 1000;
+    console.log(`[search] Outside working hours (${hour}h), checking again in ${Math.round(nextCheckMs / 60000)}min`);
+    searchTimer = setTimeout(() => scheduleSearch(), nextCheckMs);
+    return;
+  }
+
+  console.log(`[search] Next search in ${delayMin}min`);
+  searchTimer = setTimeout(() => {
+    console.log('[cron] Triggering job search');
+    enqueueTask(buildSearchTask());
+    scheduleSearch();
+  }, delayMs);
+}
+
 // --- Cron ---
 
 function startCron(): void {
-  const expr = `*/${SEARCH_INTERVAL_MIN} 8-23 * * *`;
-  cron.schedule(expr, () => {
-    console.log('[cron] Triggering job search');
-    enqueueTask(buildSearchTask());
-  }, { timezone: TIMEZONE });
-
-  // Keepalive: reload page every 10 min to prevent session expiry from inactivity
-  cron.schedule('*/10 * * * *', async () => {
-    if (!browserContext) {
-      console.log('[keepalive] Skipped: no browser context');
-      return;
-    }
-    if (isClaudeRunning) {
-      console.log('[keepalive] Skipped: Claude is running');
-      return;
-    }
-    try {
-      const page = browserContext.pages()[0];
-      if (page) {
-        const url = page.url();
-        console.log(`[keepalive] Reloading page: ${url}`);
-        await page.reload({ waitUntil: 'domcontentloaded', timeout: 10000 });
-        console.log('[keepalive] Reload done');
-      } else {
-        console.log('[keepalive] No active page to reload');
-      }
-    } catch (err) {
-      console.error('[keepalive] Reload failed:', err instanceof Error ? err.message : err);
-    }
-  }, { timezone: TIMEZONE });
+  // Search: randomized setTimeout with ±30% jitter
+  scheduleSearch();
 
   // Heartbeat: ping Telegram every 6 hours so you know daemon is alive
-  cron.schedule('0 */6 * * *', () => {
+  cron.schedule('0 */6 * * *', async () => {
     const queueLen = taskQueue.length;
-    const browserOk = browserContext ? 'ok' : 'down';
+    let browserOk = 'down';
+    try {
+      const res = await fetch(`http://127.0.0.1:${cdpPort}/json/version`);
+      if (res.ok) browserOk = 'ok';
+    } catch {}
     notify(`💚 Heartbeat: browser ${browserOk}, queue ${queueLen}`).catch(console.error);
   }, { timezone: TIMEZONE });
 
@@ -1147,6 +1001,7 @@ function startCron(): void {
 
 async function shutdown(): Promise<void> {
   shuttingDown = true;
+  if (searchTimer) clearTimeout(searchTimer);
   console.log(`[shutdown] Starting graceful shutdown (claude running: ${isClaudeRunning}, queue: ${taskQueue.length})`);
   if (currentClaudeProc && currentClaudeProc.exitCode === null) {
     console.log(`[shutdown] Stopping running Claude process (pid: ${currentClaudeProc.pid}, action: ${currentAction})...`);
@@ -1158,15 +1013,6 @@ async function shutdown(): Promise<void> {
   }
   console.log('[shutdown] Stopping Grammy bot...');
   bot.stop();
-  if (browser) {
-    console.log('[shutdown] Closing CDP connection...');
-    try {
-      await browser.close();
-      console.log('[shutdown] CDP closed');
-    } catch (err) {
-      console.error('[shutdown] CDP close error:', err instanceof Error ? err.message : err);
-    }
-  }
   if (chromeProcess && chromeProcess.exitCode === null) {
     console.log(`Stopping Chrome (pid ${chromeProcess.pid})...`);
     chromeProcess.kill('SIGTERM');
