@@ -110,15 +110,43 @@ security find-generic-password -s "claude-cli" -w
 cat ~/.claude.json | grep -A5 oauthAccount
 ```
 
-#### 4. Set up your profile
+#### 4. Shared Linux host hardening (recommended)
+
+On a multi-user Debian/Ubuntu machine, **do not** add the bot user to the host `docker` group. That would let it control the system Docker daemon and other users' containers. Use a dedicated account with **rootless Docker** instead:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y uidmap dbus-user-session slirp4netns fuse-overlayfs docker-ce-rootless-extras
+sudo adduser --disabled-password --gecos "" upworkbot
+sudo passwd -l upworkbot
+grep -q '^upworkbot:' /etc/subuid || echo 'upworkbot:100000:65536' | sudo tee -a /etc/subuid
+grep -q '^upworkbot:' /etc/subgid || echo 'upworkbot:100000:65536' | sudo tee -a /etc/subgid
+sudo loginctl enable-linger upworkbot
+sudo -iu upworkbot bash -lc 'export XDG_RUNTIME_DIR=/run/user/$(id -u); dockerd-rootless-setuptool.sh install'
+sudo -iu upworkbot bash -lc 'export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock; docker context use rootless'
+```
+
+After that, run every Docker command for this project as `upworkbot`, not as root and not via the system Docker socket.
+
+The bundled noVNC UI stays bound to `127.0.0.1:6080` for convenience. That blocks network exposure, but other local users on the same host can still open it if they already have shell/browser access to the machine.
+
+If you are upgrading from an older Docker setup that ran the app as root, migrate the existing Docker volumes once before the first hardened start:
+
+```bash
+cd infra
+docker compose down
+docker run --rm -u 0:0 -v infra_upwork-data:/data -v infra_claude-auth:/claude ubuntu:24.04 bash -lc 'chown -R 10001:10001 /data /claude'
+```
+
+#### 5. Set up your profile
 
 ```bash
 cp data/profile.example.md data/profile.md
 ```
 
-Edit `data/profile.md` with your name, tech stack, experience, scoring criteria, and proposal style. The agent reads this file to score jobs and write proposals.
+Edit `data/profile.md` with your name, tech stack, experience, scoring criteria, and proposal style. In Docker mode this file is mounted into the container as read-only, while browser data, logs, and the jobs database stay in Docker volumes.
 
-#### 5. Launch
+#### 6. Launch
 
 ```bash
 cd infra
