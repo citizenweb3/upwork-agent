@@ -8,6 +8,7 @@ services:
     init: true
     stop_grace_period: 30s
     shm_size: '2gb'
+    env_file: .env
     read_only: true
     security_opt:
       - no-new-privileges:true
