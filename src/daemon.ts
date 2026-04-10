@@ -66,6 +66,8 @@ let chromeProcess: ReturnType<typeof spawn> | null = null;
 let shuttingDown = false;
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 const cdpPort = 9222;
+const DOCKER_DISPLAY_WIDTH = 1920;
+const DOCKER_DISPLAY_HEIGHT = 1080;
 
 async function waitForCDP(port: number, timeoutMs: number): Promise<void> {
   const start = Date.now();
@@ -131,7 +133,14 @@ async function launchBrowser(): Promise<void> {
   const chromeArgs = [
     `--remote-debugging-port=${cdpPort}`,
     `--user-data-dir=${userDataDir}`,
-    ...(IS_DOCKER ? ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] : []),
+    ...(IS_DOCKER ? [
+      '--no-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      `--window-size=${DOCKER_DISPLAY_WIDTH},${DOCKER_DISPLAY_HEIGHT}`,
+      '--window-position=0,0',
+      '--start-maximized',
+    ] : []),
   ];
   chromeProcess = spawn(CHROME_PATH, chromeArgs, { detached: true, stdio: 'ignore' });
 
