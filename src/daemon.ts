@@ -222,9 +222,11 @@ async function _processQueue(): Promise<void> {
   const args = ['-p', task, '--allowedTools', tools, '--output-format', 'stream-json', '--verbose'];
 
   // Haiku for submit (simple form filling)
-  // Sonnet (default) for search, propose and redo
+  // Sonnet for search, propose and redo
   if (action === 'submit') {
     args.push('--model', 'claude-haiku-4-5-20251001');
+  } else {
+    args.push('--model', 'claude-sonnet-4-6');
   }
 
   logToFile(label, `SPAWN: claude ${args.join(' ').slice(0, 500)}\nCWD: ${CWD}`);
@@ -239,7 +241,7 @@ async function _processQueue(): Promise<void> {
     env: cleanEnv,
   });
   currentClaudeProc = proc;
-  console.log(`[queue] Claude spawned (pid: ${proc.pid}, action: ${action}, model: ${action === 'submit' ? 'haiku' : 'sonnet'})`);
+  console.log(`[queue] Claude spawned (pid: ${proc.pid}, action: ${action}, model: ${action === 'submit' ? 'haiku-4.5' : 'sonnet-4.6'})`);
 
   let stdout = '';
   let stderr = '';
