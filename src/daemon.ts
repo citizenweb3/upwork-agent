@@ -148,6 +148,13 @@ async function launchBrowser(): Promise<void> {
 
 // --- Task Queue (Mutex) ---
 
+const ACTION_EFFORT: Record<string, string> = {
+  search: 'medium',
+  propose: 'high',
+  redo: 'high',
+  submit: 'low',
+};
+
 interface QueueItem {
   task: string;
   label: string;
@@ -221,13 +228,11 @@ async function _processQueue(): Promise<void> {
   const tools = item.allowedTools ?? 'mcp__upwork__*,Bash,Read,Write';
   const args = ['-p', task, '--allowedTools', tools, '--output-format', 'stream-json', '--verbose'];
 
-  // Haiku for submit (simple form filling)
-  // Sonnet for search, propose and redo
-  if (action === 'submit') {
-    args.push('--model', 'claude-haiku-4-5-20251001');
-  } else {
-    args.push('--model', 'claude-sonnet-4-6');
-  }
+  // Haiku for submit (simple form filling), Sonnet for search/propose/redo.
+  // Effort tuned per action: submit=low (mechanical), search=medium, propose/redo=high (quality matters).
+  const model = action === 'submit' ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-6';
+  const effort = ACTION_EFFORT[action ?? ''] ?? 'medium';
+  args.push('--model', model, '--effort', effort);
 
   logToFile(label, `SPAWN: claude ${args.join(' ').slice(0, 500)}\nCWD: ${CWD}`);
 
@@ -241,7 +246,7 @@ async function _processQueue(): Promise<void> {
     env: cleanEnv,
   });
   currentClaudeProc = proc;
-  console.log(`[queue] Claude spawned (pid: ${proc.pid}, action: ${action}, model: ${action === 'submit' ? 'haiku-4.5' : 'sonnet-4.6'})`);
+  console.log(`[queue] Claude spawned (pid: ${proc.pid}, action: ${action}, model: ${model}, effort: ${effort})`);
 
   let stdout = '';
   let stderr = '';
