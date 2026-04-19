@@ -141,6 +141,19 @@ See `README.md` for full Docker documentation.
 
 Claude Code child processes spawned by the daemon use `--allowedTools mcp__upwork__*,Bash,Read,Write` to access only the project-local Playwright MCP (connected to Upwork-authenticated browser) and basic tools.
 
+### Model & Effort Policy
+
+Each action gets an explicit `--model` and `--effort` (see `ACTION_EFFORT` and the model branch in `src/daemon.ts`):
+
+| Action  | Model      | Effort | Why |
+|---------|------------|--------|-----|
+| search  | sonnet-4-6 | medium | Scan + score, no creativity needed |
+| propose | sonnet-4-6 | high   | Cover letter quality drives response rate |
+| redo    | sonnet-4-6 | high   | Post-rejection rewrite, same bar as propose |
+| submit  | haiku-4-5  | low    | Mechanical form fill on Upwork |
+
+Do not inherit model/effort from the global default — the daemon pins both explicitly on every spawn so cost stays predictable.
+
 ### File Structure
 
 ```
