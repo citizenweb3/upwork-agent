@@ -11,7 +11,7 @@ import { db } from './db/index.js';
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 const ALLOWED_USERS = process.env.ALLOWED_USERS;
-const SEARCH_INTERVAL_MIN = process.env.SEARCH_INTERVAL_MIN ?? '20';
+const SEARCH_INTERVAL_MIN = process.env.SEARCH_INTERVAL_MIN ?? '60';
 const TIMEZONE = process.env.TIMEZONE ?? 'Europe/Lisbon';
 function defaultChromePath(): string {
   switch (process.platform) {
@@ -542,7 +542,7 @@ function buildSearchTask(): QueueItem {
       '  g. Save (use SINGLE QUOTES for $ values):',
       '     yarn jobs add --title \'...\' --url \'...\' --description \'...\' --budget \'...\' --job-type \'...\' --skills \'...\' --client-rating N --client-hires N --client-location \'...\' --client-spent \'...\' --proposals-count \'...\' --posted-at \'...\' --relevance-score N --relevance-reason \'...\'',
       '  h. If "duplicate": true in output, do NOT send to Telegram.',
-      '  i. If score >= 4 AND newly added: `yarn tg send-job <id>`',
+      '  i. If score >= 6 AND newly added: `yarn tg send-job <id>`',
       `  j. browser_navigate_back. Wait ${clickDelay} seconds.`,
       '',
       `17. Process up to ${JOBS_PER_SEARCH} jobs. Do NOT paginate.`,
