@@ -22,7 +22,7 @@ Cron (every N min) or /search command
   based on your profile
         |
         v
-  Jobs scoring >= 4 sent
+  Jobs scoring >= 6 sent
   to Telegram with buttons
         |
         v
@@ -94,7 +94,7 @@ Edit `infra/.env`:
 | `CHAT_ID` | Telegram chat ID | See step 2 above |
 | `ALLOWED_USERS` | User IDs who can press buttons | From [@userinfobot](https://t.me/userinfobot), comma-separated |
 | `TIMEZONE` | Your timezone | `Europe/Lisbon` (default) |
-| `SEARCH_INTERVAL_MIN` | Auto-search interval in minutes | Default: `20` |
+| `SEARCH_INTERVAL_MIN` | Auto-search interval in minutes | Default: `60` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code OAuth token | See below |
 | `CLAUDE_ACCOUNT_UUID` | Account UUID | See below |
 | `CLAUDE_EMAIL` | Account email | See below |
@@ -202,7 +202,7 @@ Edit `.env`:
 | `CHAT_ID` | Telegram chat ID (negative for groups) | required |
 | `ALLOWED_USERS` | Comma-separated Telegram user IDs | required |
 | `TIMEZONE` | Your timezone | `Europe/Lisbon` |
-| `SEARCH_INTERVAL_MIN` | Auto-search interval in minutes (8:00-23:00) | `20` |
+| `SEARCH_INTERVAL_MIN` | Auto-search interval in minutes (8:00-23:00) | `60` |
 | `CHROME_PATH` | Path to Chrome binary | Auto-detected by OS |
 
 #### 4. Set up your profile
@@ -401,7 +401,7 @@ CLAUDE.md         Agent instructions for Claude Code
 
 **Search finds 0 jobs**
 - The agent rotates through search queries randomly
-- Check `data/profile.md` scoring criteria — threshold is >= 4
+- Check `data/profile.md` scoring criteria — threshold is >= 6
 
 ## Background Processes
 

@@ -32,7 +32,7 @@ Fill in `.env`:
 | `CHAT_ID` | Add [@RawDataBot](https://t.me/RawDataBot) to your group, it will print the chat ID (negative number). Then remove the bot. For personal chat — send any message to [@userinfobot](https://t.me/userinfobot) |
 | `ALLOWED_USERS` | Comma-separated Telegram user IDs who can press buttons. Get your ID from [@userinfobot](https://t.me/userinfobot) |
 | `TIMEZONE` | Your timezone, e.g. `Europe/Lisbon` (default) |
-| `SEARCH_INTERVAL_MIN` | Cron interval in minutes for auto-search, e.g. `30` (default) |
+| `SEARCH_INTERVAL_MIN` | Cron interval in minutes for auto-search, e.g. `60` (default) |
 | `CHROME_PATH` | Path to Google Chrome binary. Default: `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` |
 
 If using a **group chat**:
@@ -200,7 +200,7 @@ Read `data/profile.md` — it contains skills, scoring factors, and ideal projec
 | 4-5 | Partial match — some relevant skills |
 | 0-3 | Not a fit |
 
-**Only send jobs scoring >= 4 to Telegram** via `yarn tg send-job`.
+**Only send jobs scoring >= 6 to Telegram** via `yarn tg send-job`.
 
 ## Proposal Generation
 
@@ -258,7 +258,7 @@ When searching for new jobs:
    - Read job details (title, description, budget, client info)
    - Score relevance (0-10) based on profile.md criteria
    - `yarn jobs add --title "..." --url "..." --relevance-score N ...`
-   - If score >= 4: `yarn tg send-job <id>`
+   - If score >= 6: `yarn tg send-job <id>`
 5. Scroll naturally through 2-3 pages of results
 6. Exit when done
 
