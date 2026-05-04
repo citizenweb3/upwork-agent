@@ -47,7 +47,7 @@ const CWD = process.cwd();
 const chatId = Number(CHAT_ID);
 const allowedUsers = new Set(ALLOWED_USERS.split(',').map(id => Number(id.trim())));
 
-// --- Profile (read fresh on each proposal) ---
+// --- Profile + proposal template (read fresh on each proposal) ---
 
 function readProfile(): string {
   try {
@@ -55,6 +55,16 @@ function readProfile(): string {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[profile] Cannot read data/profile.md: ${msg}`);
+    return '';
+  }
+}
+
+function readProposalTemplate(): string {
+  try {
+    return readFileSync('data/proposal-template.md', 'utf-8');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[template] Cannot read data/proposal-template.md: ${msg}`);
     return '';
   }
 }
@@ -436,12 +446,51 @@ async function sendError(
 
 // --- Task Builders ---
 
+// Floating newbie discount: 10-15% below client budget anchor.
+// Picked once per proposal to avoid uniform-looking bids across applications.
+function pickDiscount(): number {
+  return 0.85 + Math.random() * 0.05; // 0.85..0.90 → 10-15% off
+}
+
+function buildBidRules(): string {
+  const multiplier = pickDiscount().toFixed(3);
+  const discountPct = ((1 - parseFloat(multiplier)) * 100).toFixed(1);
+  return [
+    'BID PRICING (NEWBIE DISCOUNT STRATEGY):',
+    `- For THIS proposal, bid at ${multiplier}x of the client's budget anchor (a ${discountPct}% discount). This number was picked at random in the 10-15% range for this submission only; do NOT round it to a "nice" figure that gives the discount away.`,
+    '- BUDGET ANCHOR resolution:',
+    '    * Hourly with posted range "$X-$Y/hr": anchor = Y (upper bound).',
+    '    * Hourly with single posted rate "$Y/hr": anchor = Y.',
+    '    * Hourly with no posted rate: anchor = $30/hr (newcomer default; real Upwork AI range $30-$150/hr). Apply the discount on top.',
+    '    * Fixed budget "$Z": anchor = Z.',
+    '    * Fixed "open budget" / not specified: estimate scope from the description. MVP/SaaS build → anchor $1500. RAG/agent build → anchor $1500. Small focused task (a single integration, a small fix, a one-pager build) → anchor $500 (= floor). Numbers calibrated to real Upwork postings (~20% of fixed AI jobs <$1K, ~8% in $1K-$10K). State your scope assumption briefly in the proposal.',
+    '- HARD FLOORS (never bid below, regardless of discount):',
+    '    * Hourly: $20/hr.',
+    '    * Fixed: $500.',
+    '    If anchor * multiplier < floor, bid = floor.',
+    '- IF client posted budget is below the floor (e.g. "$5/hr", "$100 fixed"): SKIP this job entirely. Run `yarn tg send "Job ${jobId} below budget floor, skipped"` and do NOT save a proposal.',
+    '- ROUND naturally:',
+    '    * Hourly: nearest $1 (e.g. $42.5 → $43).',
+    '    * Fixed: nearest $25 below $1000, nearest $50 between $1000-3000, nearest $100 above $3000.',
+    '    * Examples: $510 → $525, $647 → $650, $1234 → $1250, $2780 → $2800, $4321 → $4300.',
+    '- bid_amount format: number with $ sign (e.g. "$43" for hourly, "$2550" for fixed).',
+  ].join('\n');
+}
+
 const PROPOSAL_VALIDATION_RULES = [
   'VALIDATION before saving:',
   '- Proposal MUST be 200-3000 characters. If shorter, expand with more detail. If longer, trim.',
   '- Proposal MUST NOT contain placeholder text like "[your name]", "[project]", "I\'m excited about this opportunity".',
   '- Proposal MUST NOT contain any dashes (em dash — or double dash --).',
   '- bid_amount MUST be a number with $ sign (e.g. "$50" for hourly, "$3000" for fixed).',
+  '- Client buried rules: re-read the FULL job description (especially the last 30%) before saving. If the client asked to start with a specific word/phrase, answer specific questions, mention a code-word, or include specific items, the proposal MUST satisfy ALL of those. Missing even one is auto-rejection.',
+  '- Privacy: proposal MUST NOT contain any country, city, or timezone reference (Vietnam, GMT, UTC, GMT+7, etc.). If the client asked for a timezone, answer with a flexible-hours line, never a specific zone.',
+  '- Proof links: for each 🟣 entry that references a project with a public live URL listed in `data/profile.md`, that URL MUST appear inline next to the entry as plain text. The GitHub link in proposals is `https://github.com/citizenweb3` (organization, browse for source).',
+  '- Portfolio pointer: include one line near the end of the message that points to the Upwork profile portfolio. When the task maps cleanly to one Upwork portfolio item, name it by its EXACT title from `data/profile.md` (e.g. `RAG AI Assistant for Real On-Chain Blockchain Data`).',
+  '- Never invent URLs. Only use URLs that are explicitly present in `data/profile.md` for the specific project being referenced.',
+  '- Upwork matching: EVERY skill tag attached to the job (from `yarn jobs get` output) MUST appear verbatim in the proposal text at least once. Re-check before saving.',
+  '- Upwork matching: at least 5 distinctive nouns/noun-phrases from the job title and description (tools, frameworks, model names, industry terms) MUST appear verbatim.',
+  '- No keyword stuffing: each keyword inside a real sentence; no comma-separated stack lists; no keyword repeated more than 3 times.',
 ].join('\n');
 
 const SEARCH_QUERIES = [
@@ -528,7 +577,8 @@ function buildSearchTask(): QueueItem {
       '  b. Run `yarn jobs check <url>` — if "exists", skip.',
       `  c. browser_click on the job link. Wait ${pageDelay} seconds.`,
       '  d. browser_snapshot to read the full job detail page.',
-      '  e. Extract ALL available fields: title, description (~500 chars), budget, job-type, skills, client-rating, client-hires, client-location, client-spent, proposals-count, posted-at.',
+      '  e. Extract ALL available fields: title, description (FULL TEXT, do NOT truncate), budget, job-type, skills, client-rating, client-hires, client-location, client-spent, proposals-count, posted-at.',
+      '     CRITICAL: capture the ENTIRE job description verbatim, from the first character to the last. Clients often put MANDATORY rules, screening questions, "to apply, start your message with X", or required answers at the very END of the description. If those are cut off, the proposal will be auto-rejected. Use browser_run_code with `el.innerText` on the description container to get the complete text, not just visible-snapshot text.',
       '  f. Score relevance 0-10 based on profile.md.',
       '  g. Save (use SINGLE QUOTES for $ values):',
       '     yarn jobs add --title \'...\' --url \'...\' --description \'...\' --budget \'...\' --job-type \'...\' --skills \'...\' --client-rating N --client-hires N --client-location \'...\' --client-spent \'...\' --proposals-count \'...\' --posted-at \'...\' --relevance-score N --relevance-reason \'...\'',
@@ -554,18 +604,33 @@ function buildProposeTask(jobId: string): QueueItem {
       `Generate a proposal for job ${jobId}.`,
       '',
       `Step 1: Get the job details: yarn jobs get ${jobId}`,
-      'Step 2: Search for similar past jobs to learn from: yarn jobs find "<2-3 keywords from job title/skills>"',
-      '  - Jobs with status=applied are examples of GOOD proposals (Ivan approved them).',
-      '  - Jobs with status=cancelled are examples of BAD proposals (Ivan rejected them).',
-      '  - Use these to calibrate tone, length, and angle.',
-      `Step 3: Write a cover letter matching Ivan's style from profile.md.`,
+      'Step 2: READ THE ENTIRE DESCRIPTION TWICE, paying special attention to the LAST 30% of the text.',
+      '  Clients frequently bury mandatory instructions at the end, such as:',
+      '    * "Start your proposal with the word X" / "Begin with the phrase Y"',
+      '    * "Answer these N questions in your cover letter: ..."',
+      '    * "Mention [keyword] so I know you read this" (anti-bot filter)',
+      '    * Required deliverables, timeline, budget constraints, or location requirements',
+      '    * Specific portfolio items or examples to include',
+      '  Extract every such rule into a list. The proposal MUST satisfy ALL of them, or it will be auto-rejected by the client.',
+      '  If a rule conflicts with the proposal template (e.g. client requires a specific opening word that overrides "Hey 🙂"), the CLIENT RULE WINS. Adapt the template structure to fit the client rules, do not ignore the client rules.',
+      'Step 3: Search for similar past jobs to learn from: yarn jobs find "<2-3 keywords from job title/skills>"',
+      '  - Jobs with status=applied are GOOD proposals (approved). Use ONLY for tone/specificity calibration.',
+      '  - Jobs with status=cancelled are BAD proposals (rejected). Avoid their angle.',
+      '  - DO NOT copy structure or opening from past proposals. The template below defines structure.',
+      'Step 4: Write a cover letter strictly following the proposal template AND every client rule extracted in Step 2.',
       '',
-      'Ivan\'s profile for reference:',
+      '=== PROPOSAL TEMPLATE (PRIMARY, AUTHORITATIVE) ===',
+      readProposalTemplate(),
+      '',
+      '=== FREELANCER PROFILE (SECONDARY, FACTS ONLY) ===',
+      'Use this only to fill in stack details, project metrics, and other facts that the template references. The template overrides any structural or stylistic guidance found here.',
       readProfile(),
       '',
       PROPOSAL_VALIDATION_RULES,
       '',
-      `Step 4: Save and send:`,
+      buildBidRules(),
+      '',
+      `Step 5: Save and send:`,
       `yarn jobs update ${jobId} --proposal-text '...' --bid-amount '...'`,
       `yarn tg send-proposal ${jobId}`,
     ].join('\n'),
@@ -622,16 +687,28 @@ function buildRedoTask(jobId: string): QueueItem {
       '',
       `Step 1: Get the job: yarn jobs get ${jobId}`,
       '  Read the existing proposal_text carefully. This is the REJECTED version. Do NOT reuse its structure, opening, or angle.',
-      'Step 2: Search for similar past jobs: yarn jobs find "<2-3 keywords from job title/skills>"',
+      'Step 2: READ THE ENTIRE DESCRIPTION TWICE, paying special attention to the LAST 30% of the text. Clients often bury mandatory instructions there:',
+      '    * "Start your proposal with the word X" / "Begin with the phrase Y"',
+      '    * "Answer these N questions in your cover letter"',
+      '    * "Mention [keyword] so I know you read this" (anti-bot filter)',
+      '    * Required deliverables, timeline, budget, location, portfolio items',
+      '  Extract every such rule. The new proposal MUST satisfy ALL of them. The previous proposal may have been rejected precisely because it ignored one of these. If client rules conflict with the template, the CLIENT RULE WINS.',
+      'Step 3: Search for similar past jobs: yarn jobs find "<2-3 keywords from job title/skills>"',
       '  - Look at applied/cancelled proposals for calibration.',
-      'Step 3: Write a COMPLETELY different cover letter. Change the opening hook, the referenced project, and the overall angle.',
+      'Step 4: Write a COMPLETELY different cover letter, still following the proposal template structure AND every client rule extracted in Step 2. Change the opening hook, the referenced project examples, and the overall angle, but keep the template structure (greeting, paragraph order, 🟣 list, 👉 question, sign-off) unless a client rule explicitly overrides it.',
       '',
-      'Ivan\'s profile for reference:',
+      '=== PROPOSAL TEMPLATE (PRIMARY, AUTHORITATIVE) ===',
+      readProposalTemplate(),
+      '',
+      '=== FREELANCER PROFILE (SECONDARY, FACTS ONLY) ===',
+      'Use this only to fill in stack details, project metrics, and other facts that the template references. The template overrides any structural or stylistic guidance found here.',
       readProfile(),
       '',
       PROPOSAL_VALIDATION_RULES,
       '',
-      `Step 4: Save and send:`,
+      buildBidRules(),
+      '',
+      `Step 5: Save and send:`,
       `yarn jobs update ${jobId} --proposal-text '...' --bid-amount '...'`,
       `yarn tg send-proposal ${jobId}`,
     ].join('\n'),

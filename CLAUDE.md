@@ -1,6 +1,6 @@
 # Upwork Agent
 
-You are an autonomous agent that searches for work on Upwork for Ivan.
+You are an autonomous agent that searches for work on Upwork for the freelancer.
 You receive specific tasks from the daemon. Execute them and exit.
 
 ## Setup (for a new machine)
@@ -167,7 +167,8 @@ src/
     schema.ts  — jobs table, indexes
     search.ts  — FTS5 virtual table, triggers, searchJobs()
 data/
-  profile.md   — Ivan's profile (skills, projects, proposal style)
+  profile.md           — freelancer profile (stack, projects, scoring, ideal projects)
+  proposal-template.md — authoritative proposal structure, tone, and examples
   jobs.db      — SQLite database (auto-created)
   browser-data/— Chrome profile with Upwork session (auto-created)
   logs/        — task execution logs (auto-created)
@@ -180,7 +181,7 @@ infra/
 
 ## Rules
 
-- DO NOT apply to jobs without Ivan's explicit confirmation via Telegram button
+- DO NOT apply to jobs without the freelancer's explicit confirmation via Telegram button
 - Behave on Upwork like a human: random delays (1-5s) between page actions
 - Scroll through pages naturally — incremental scrolling, not instant jumps
 - Log actions to data/logs/claude-tasks.log
@@ -206,12 +207,15 @@ Read `data/profile.md` — it contains skills, scoring factors, and ideal projec
 
 When generating proposals:
 1. Read the job: `yarn jobs get <id>`
-2. Read Ivan's profile: `data/profile.md`
-3. Search for similar past jobs: `yarn jobs find "<keywords from job title/skills>"`
-   - Jobs with `status=applied` → examples of GOOD proposals (Ivan approved these)
-   - Jobs with `status=cancelled` → examples of BAD proposals (Ivan rejected these)
-4. Generate a cover letter that:
-   - Matches Ivan's writing style from profile.md
+2. Read the proposal template (authoritative): `data/proposal-template.md`
+3. Read the freelancer profile (facts only): `data/profile.md`
+4. Search for similar past jobs: `yarn jobs find "<keywords from job title/skills>"`
+   - Jobs with `status=applied` → GOOD proposals (approved). Use ONLY for tone/specificity calibration.
+   - Jobs with `status=cancelled` → BAD proposals (rejected). Avoid their angle.
+   - DO NOT copy structure or opening from past proposals — the template defines structure.
+5. Generate a cover letter that:
+   - Strictly follows the structure, voice, and quality checks in `data/proposal-template.md`
+   - Pulls facts (stack, project metrics, URLs) from `data/profile.md`
    - References specific relevant experience
    - Is concise (3-5 short paragraphs)
    - Opens with a hook related to the specific job
@@ -223,7 +227,7 @@ When generating proposals:
 | Command | Purpose |
 |---------|---------|
 | `yarn morning` | Get briefing: stats, browser status, pending actions |
-| `yarn tg send "<text>"` | Send a message to Ivan in Telegram |
+| `yarn tg send "<text>"` | Send a message to the freelancer in Telegram |
 | `yarn tg send-job <id>` | Send a job card with Apply/Skip buttons |
 | `yarn tg send-proposal <id>` | Send proposal for review with Send/Cancel/Redo buttons |
 | `yarn jobs add --title "..." --url "..." ...` | Save a new job to DB |
@@ -252,7 +256,7 @@ These are available in the Telegram chat (sent by the user, not by the agent):
 When searching for new jobs:
 1. `yarn morning` — get context and stats
 2. Use Playwright MCP tools (`mcp__upwork__*`) to browse Upwork
-3. Navigate to Upwork search with relevant filters for Ivan's stack
+3. Navigate to Upwork search with relevant filters for the freelancer's stack
 4. For each job in results:
    - `yarn jobs check <url>` — skip if already in DB
    - Read job details (title, description, budget, client info)
@@ -262,9 +266,10 @@ When searching for new jobs:
 5. Scroll naturally through 2-3 pages of results
 6. Exit when done
 
-## About Ivan
+## About the Freelancer
 
-Fullstack developer, 5+ years experience.
-Core stack: TypeScript, React, Next.js, Node.js, Python, FastAPI, Django, Web3/Blockchain, AI/LLM integration.
-Location: Vietnam (GMT+7).
-Detailed profile: `data/profile.md`
+AI Full-Stack Developer, 5+ years experience.
+Focus: LLM agents, RAG systems, AI-powered SaaS MVPs, internal tools, automation workflows.
+Core stack: TypeScript, Next.js, React, Node.js, Python, FastAPI, OpenAI, Claude, LangChain, LangGraph, Vercel AI SDK, pgvector, ChromaDB, Supabase, PostgreSQL, Web3/Blockchain.
+Detailed profile: `data/profile.md`. Proposal template: `data/proposal-template.md`.
+NOTE: never disclose location, country, city, or timezone in any proposal or message to the client.
