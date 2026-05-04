@@ -1,12 +1,17 @@
 FROM ubuntu:24.04
 
-# Base packages + virtual display + VNC
+# Use a regional mirror (archive.ubuntu.com is unreliable in some regions)
+RUN sed -i 's|http://archive.ubuntu.com|http://mirror.yandex.ru|g' /etc/apt/sources.list.d/ubuntu.sources \
+    || sed -i 's|http://archive.ubuntu.com|http://mirror.yandex.ru|g' /etc/apt/sources.list
+
+# Base packages + virtual display + VNC + build tools for native Node modules
 RUN apt-get update && apt-get install -y \
     curl wget gnupg supervisor \
     xvfb x11vnc novnc websockify \
     fonts-liberation fonts-noto-color-emoji \
     dbus dbus-x11 \
     sqlite3 git jq \
+    build-essential python3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Node.js 20
